@@ -975,39 +975,19 @@ function shiftDay(n){ var d=new Date(S.selDate);d.setDate(d.getDate()+n);S.selDa
 function shiftMonth(n){ var d=new Date(S.selDate);d.setMonth(d.getMonth()+n);S.selDate=d;selDay(dkey(d)); }
 
 function initCalScrollExpand(){
-  // ── Desktop: wheel over the calendar header area expands ──
+  // ── Desktop: scroll wheel over the calendar expands/collapses ──
   var calSection = document.getElementById('cal-section');
   if(calSection){
     calSection.addEventListener('wheel', function(e){
-      if(e.deltaY < 0 && calExpanded){ collapseCalendar(); }
-      else if(e.deltaY > 0 && !calExpanded){ calExpanded=true; renderStrip(); }
+      if(e.deltaY > 0 && !calExpanded){ calExpanded=true; renderStrip(); }
+      else if(e.deltaY < 0 && calExpanded){ collapseCalendar(); }
     }, {passive:true});
   }
 
-  // ── Mobile: swipe UP on the week-strip expands, swipe DOWN on month-grid collapses ──
-  var touchStartY = 0;
-  var touchTarget = null;
-  document.addEventListener('touchstart', function(e){
-    touchStartY = e.touches[0].clientY;
-    touchTarget = e.target;
-  }, {passive:true});
-  document.addEventListener('touchend', function(e){
-    var dy = touchStartY - e.changedTouches[0].clientY;
-    var strip = document.getElementById('week-strip');
-    var grid  = document.getElementById('month-grid');
-    if(!calExpanded && strip && strip.contains(touchTarget) && dy > 30){
-      // Swiped UP on strip → expand
-      calExpanded = true; renderStrip();
-    } else if(calExpanded && grid && grid.contains(touchTarget) && dy < -30){
-      // Swiped DOWN on grid → collapse
-      collapseCalendar();
-    }
-  }, {passive:true});
-
   // ── Click outside calendar → collapse ──
   document.addEventListener('click', function(e){
-    var calSection = document.getElementById('cal-section');
-    if(calExpanded && calSection && !calSection.contains(e.target)){
+    var cs = document.getElementById('cal-section');
+    if(calExpanded && cs && !cs.contains(e.target)){
       collapseCalendar();
     }
   }, false);
