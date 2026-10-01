@@ -1,0 +1,8 @@
+{
+  "name": "attendease",
+  "version": "1.0.0",
+  "description": "Personal Attendance tracker",
+  "scripts": {
+    "build": "node build.js"
+  }
+}
