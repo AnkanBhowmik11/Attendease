@@ -501,14 +501,25 @@
       <button class="st-btn" id="btn-h" onclick="pickStatus('holiday')"><span class="si">&#127958;</span><span class="sl">Holiday</span></button>
       <button class="st-btn" id="btn-n" onclick="pickStatus('not-taken')"><span class="si">&#9711;</span><span class="sl">N/A</span></button>
     </div>
-    <!-- COUNT ONLY FOR PRESENT -->
-    <div class="cnt-row" id="cnt-row" style="display:none">
-      <span class="cnt-lbl">Classes attended</span>
-      <div class="cnt-ctrl">
-        <button class="cnt-btn" onclick="tweakCount(-1)">-</button>
-        <span class="cnt-num" id="cnt-disp">1 out of 3</span>
-        <button class="cnt-btn" onclick="tweakCount(1)">+</button>
+    <!-- COUNT ONLY FOR PRESENT: two rows - teacher took (m) and you attended (n) -->
+    <div id="cnt-row" style="display:none">
+      <div class="cnt-row" style="margin-bottom:8px">
+        <span class="cnt-lbl">Teacher took</span>
+        <div class="cnt-ctrl">
+          <button class="cnt-btn" onclick="tweakTotal(-1)">-</button>
+          <span class="cnt-num" id="total-disp">1</span>
+          <button class="cnt-btn" onclick="tweakTotal(1)">+</button>
+        </div>
       </div>
+      <div class="cnt-row">
+        <span class="cnt-lbl">You attended</span>
+        <div class="cnt-ctrl">
+          <button class="cnt-btn" onclick="tweakCount(-1)">-</button>
+          <span class="cnt-num" id="cnt-disp">1</span>
+          <button class="cnt-btn" onclick="tweakCount(1)">+</button>
+        </div>
+      </div>
+      <div style="text-align:center;font-size:13px;font-weight:700;color:var(--primary);margin-top:6px;margin-bottom:14px" id="att-fraction-lbl">1 out of 1</div>
     </div>
     <button class="save-btn" onclick="commitAttendance()">Save Attendance</button>
   </div>
@@ -1027,7 +1038,8 @@ function renderList(){
     var s=subj(cls.sid);if(!s)return;
     var at=attDay[cls.sid];
     var st=at?at.status:'unmarked';
-    var cnt=at?at.count:1;
+    var n=at?(at.count||1):1;
+    var m=at?(at.total||at.count||1):1;
     html+='<div class="class-card" onclick="openAtt(\''+cls.sid+'\',\''+dk+'\')">'
       +'<div class="cc-bar" style="background:'+s.color+'"></div>'
       +'<div class="cc-info">'
@@ -1035,7 +1047,7 @@ function renderList(){
         +'<div class="cc-meta">'
           +'<span class="type-badge '+s.type+'">'+s.type+'</span>'
           +'<span>'+cls.time+'</span>'
-          +(at&&st==='present'?'<span style="font-size:10px;color:var(--success);font-weight:700">'+cnt+' / 3</span>':'')
+          +(at&&st==='present'?'<span style="font-size:10px;color:var(--success);font-weight:700">'+n+' out of '+m+'</span>':'')
           +(cls.extra?'<span class="extra-badge">EXTRA</span>':'')
         +'</div>'
       +'</div>'
@@ -1051,10 +1063,14 @@ function renderList(){
 function openAtt(sid,dk){
   var s=subj(sid);
   var at=(S.att[dk]||{})[sid];
-  modal={sid:sid,dk:dk,status:at?at.status:null,count:at?at.count:1};
+  modal={
+    sid:sid, dk:dk,
+    status: at?at.status:null,
+    count:  at?at.count:1,   // n = you attended
+    total:  at?at.total:1    // m = teacher took
+  };
   document.getElementById('sh-name').textContent=s.name;
   document.getElementById('sh-date').textContent=fmtDate(fromDK(dk));
-  document.getElementById('cnt-disp').textContent=modal.count+' out of 3';
   ['p','a','h','n'].forEach(function(k){document.getElementById('btn-'+k).className='st-btn';});
   if(modal.status){
     var MAP={present:'p',absent:'a',holiday:'h','not-taken':'n'};
@@ -1072,19 +1088,37 @@ function pickStatus(st){
   document.getElementById('btn-'+MAP[st]).className='st-btn '+CLS[MAP[st]];
   updateCntRow();
 }
-// COUNT ONLY SHOWN FOR PRESENT (absent has no count - you were just absent!)
 function updateCntRow(){
-  document.getElementById('cnt-row').style.display=modal.status==='present'?'flex':'none';
+  document.getElementById('cnt-row').style.display=modal.status==='present'?'block':'none';
+  refreshCntDisplay();
 }
-function tweakCount(n){
-  modal.count=Math.max(1,Math.min(3,(modal.count||1)+n));
-  document.getElementById('cnt-disp').textContent=modal.count+' out of 3';
+function refreshCntDisplay(){
+  document.getElementById('total-disp').textContent=modal.total;
+  document.getElementById('cnt-disp').textContent=modal.count;
+  document.getElementById('att-fraction-lbl').textContent=modal.count+' out of '+modal.total;
+}
+function tweakTotal(d){
+  modal.total=Math.max(1,Math.min(3,(modal.total||1)+d));
+  // ensure n <= m
+  modal.count=Math.min(modal.count,modal.total);
+  refreshCntDisplay();
+}
+function tweakCount(d){
+  modal.count=Math.max(1,Math.min(modal.total,(modal.count||1)+d));
+  refreshCntDisplay();
 }
 async function commitAttendance(){
   if(!modal.status){toast('Please pick a status');return;}
   if(!S.att[modal.dk])S.att[modal.dk]={};
-  var cnt=modal.status==='present'?modal.count:1;
-  S.att[modal.dk][modal.sid]={status:modal.status,count:cnt};
+  var rec={status:modal.status};
+  if(modal.status==='present'){
+    rec.count=modal.count;  // n
+    rec.total=modal.total;  // m
+  } else {
+    rec.count=1;
+    rec.total=1;
+  }
+  S.att[modal.dk][modal.sid]=rec;
   save();
   document.getElementById('att-overlay').classList.remove('open');
   toast(stLabel(modal.status)+' marked!');
@@ -1124,9 +1158,14 @@ function getStats(sid){
   var present=0,absent=0,holiday=0,notTaken=0,total=0;
   Object.values(S.att).forEach(function(day){
     var a=day[sid];if(!a)return;
-    var c=a.count||1;
-    if(a.status==='present'){present+=c;total+=c;}
-    if(a.status==='absent'){absent++;total++;}
+    if(a.status==='present'){
+      present+=a.count||1;       // n classes attended
+      total  +=a.total||a.count||1; // m classes conducted
+    }
+    if(a.status==='absent'){
+      absent++;
+      total+=a.total||1; // count absent session as m conducted
+    }
     if(a.status==='holiday')holiday++;
     if(a.status==='not-taken')notTaken++;
   });
@@ -1195,18 +1234,19 @@ function openDetail(sid){
     var dk=entry[0],day=entry[1];
     var a=day[sid];if(!a)return;
     var d=fromDK(dk);
-    rows.push({dk:dk,day:DAYS[d.getDay()],disp:fmtShort(d),status:a.status,count:a.count||1,ts:d.getTime()});
+    rows.push({dk:dk,day:DAYS[d.getDay()],disp:fmtShort(d),status:a.status,count:a.count||1,total:a.total||a.count||1,ts:d.getTime()});
   });
+  // also carry total (m) in rows
   rows.sort(function(a,b){return b.ts-a.ts;});
   var wrap=document.getElementById('att-table-wrap');
   if(!rows.length){
     wrap.innerHTML='<div class="empty-st">No records yet.<br>Start marking from the Home screen.</div>';
   } else {
     wrap.innerHTML='<div class="att-table">'
-      +'<div class="att-row att-head"><span class="att-date">Date</span><span class="att-day">Day</span><span class="att-cnt" style="width:56px">Att.</span><span class="att-chip">Status</span></div>'
+      +'<div class="att-row att-head"><span class="att-date">Date</span><span class="att-day">Day</span><span class="att-cnt" style="width:72px">Attended</span><span class="att-chip">Status</span></div>'
       +rows.map(function(r){
-        var cntStr=r.status==='present'?(r.count+' / 3'):'-';
-        return '<div class="att-row"><span class="att-date">'+r.disp+'</span><span class="att-day">'+r.day+'</span><span class="att-cnt" style="width:56px;font-size:12px">'+cntStr+'</span><span class="att-chip '+r.status+'">'+stLabel(r.status)+'</span></div>';
+        var cntStr=r.status==='present'?(r.count+' out of '+(r.total||r.count)):'-';
+        return '<div class="att-row"><span class="att-date">'+r.disp+'</span><span class="att-day">'+r.day+'</span><span class="att-cnt" style="width:72px;font-size:11px;font-weight:700">'+cntStr+'</span><span class="att-chip '+r.status+'">'+stLabel(r.status)+'</span></div>';
       }).join('')
       +'</div>';
   }
